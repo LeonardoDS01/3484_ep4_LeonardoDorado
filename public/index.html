@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat con Autenticación</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        #login, #chat, #register { display: none; }
+        ul { list-style-type: none; padding: 0; }
+        li { padding: 8px; margin-bottom: 8px; background-color: #f1f1f1; }
+        input { padding: 8px; width: 90%; margin-right: 5px; }
+        #user-info {
+            display: flex;
+            align-items: center;
+            margin-top: 10px;
+        }
+
+        #user-name {
+            font-size: 1rem;
+            font-weight: bold;
+            color: black; 
+            margin: 0;
+        }
+
+        .profile-pic {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Formulario de inicio de sesión -->
+    <div id="login">
+        <h2>Iniciar Sesión</h2>
+        <input id="loginName" placeholder="Nombre" required/>
+        <input id="email" type="email" placeholder="Correo electrónico" required/>
+        <input id="password" type="password" placeholder="Contraseña" required/>
+        <button id="loginButton">Entrar</button>
+        <button id="goToRegister">Registrarse</button>
+        <p id="loginMessage"></p>
+    </div>
+
+    <!-- Formulario de registro -->
+    <div id="register">
+        <h2>Registrarse</h2>
+        <input id="registerName" placeholder="Nombre" required/>
+        <input id="registerEmail" type="email" placeholder="Correo electrónico" required/>
+        <input id="registerPassword" type="password" placeholder="Contraseña" required/>
+        <button id="registerButton">Registrar</button>
+        <button id="goToLogin">Volver a Login</button>
+        <p id="registerMessage"></p>
+    </div>
+
+    <!-- Interfaz de chat -->
+    <div id="chat">
+        <h2>Chat en Tiempo Real</h2>
+        <div id="user-info" class="user-info">
+            <img id="profile-pic"  alt="Foto de perfil" class="profile-pic">
+            <p id="user-name" class="user-name">Leonardo Dorado</p><br>
+            <input type="file" id="fileInput" accept="image/*">
+            <button id="changeImageButton">Cambiar Imagen</button>
+        </div>
+        <ul id="messages"></ul>
+        <form id="form" action="">
+            <input id="input" autocomplete="off" placeholder="Escribe tu mensaje aquí..." /><button>Enviar</button>
+        </form>
+    </div>
+
+
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let loggedIn = false;
+
+        const loginDiv = document.getElementById('login');
+        const registerDiv = document.getElementById('register');
+        const chatDiv = document.getElementById('chat');
+        const loginMessage = document.getElementById('loginMessage');
+        const registerMessage = document.getElementById('registerMessage');
+        const form = document.getElementById('form');
+        const input = document.getElementById('input');
+        const messages = document.getElementById('messages');
+
+        // Mostrar el formulario de login al cargar
+        loginDiv.style.display = 'block';
+
+        // Navegar entre login y registro
+        document.getElementById('goToRegister').addEventListener('click', () => {
+            loginDiv.style.display = 'none';
+            registerDiv.style.display = 'block';
+        });
+
+        document.getElementById('goToLogin').addEventListener('click', () => {
+            registerDiv.style.display = 'none';
+            loginDiv.style.display = 'block';
+        });
+        // Manejar el inicio de sesión
+        document.getElementById('loginButton').addEventListener('click', async () => {
+            const username = document.getElementById('loginName').value.trim();
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value.trim();
+            if (username && email && password) {
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    socket.emit('login', username, async(response) => {
+                    if (response.success) {
+                        loggedIn = true;
+                        loginDiv.style.display = 'none';
+                        chatDiv.style.display = 'block';
+                        socket.username = response.username;
+
+                        getFoto(socket.username)
+
+                        // Obtener mensajes guardados
+                        try {
+                            const mensajesResponse = await fetch('/msj');
+                            const mensajes = await mensajesResponse.json();
+
+                            // Mostrar los mensajes en el chat
+                            mensajes.forEach((msg) => {
+                                const item = document.createElement('li');
+                                item.textContent = `${msg.name}: ${msg.msj}`;
+                                messages.appendChild(item);
+                            });
+                        } catch (error) {
+                            console.error('Error al obtener los mensajes:', error);
+                        }
+
+                    } else {
+                        loginMessage.textContent = response.message;
+                    }
+                });
+                } else {
+                    loginMessage.textContent = data.message || 'Error al iniciar sesión';
+                }
+            }else{
+                    alert('Todos los campos son obligatorios');
+                }
+        });
+
+        // Manejar el registro
+        document.getElementById('registerButton').addEventListener('click', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('registerName').value.trim();
+            const email = document.getElementById('registerEmail').value.trim();
+            const password = document.getElementById('registerPassword').value.trim();
+
+            console.log(name,email,password)
+            try {
+                if (name && email && password) {
+                    const response = await fetch('/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, email, password })
+                    });
+                const data = await response.json();
+                if (response.ok) {
+                    registerMessage.textContent = 'Usuario registrado con éxito. Por favor, inicia sesión.';
+                    registerDiv.style.display = 'none';
+                    loginDiv.style.display = 'block';
+                } else {
+                    registerMessage.textContent = data.message || 'Error al registrarse';
+                }
+                }else{
+                    alert('Todos los campos son obligatorios');
+                }
+            } catch (error) {
+                console.error("Error:", error);
+                showNotification("Ocurrió un error al registrar el usuario", false);
+            }
+
+        });
+
+        // Manejar envío de mensajes
+        form.addEventListener('submit', async(e) => {
+            e.preventDefault();
+            const message = input.value.trim();
+            if (loggedIn && input.value) {
+                const timeStamp = new Date().toISOString();
+
+                try {
+                    const response = await fetch('/msj', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            name: socket.username,
+                            msj: message,
+                            timeStamp
+                        })
+                    });
+                    if (response.ok) {
+                        socket.emit('chat message', message);
+                        input.value = '';
+                    } else {
+                        console.error('Error al guardar el mensaje:');
+                    }
+                } catch (error) {
+                    console.error("Error:", error);
+                    showNotification("Ocurrió un error al registrar el mensaje", false);
+                }
+            }
+        });
+
+        // Mostrar mensajes en el chat
+        socket.on('chat message', (msg) => {
+            const item = document.createElement('li');
+            item.textContent = `${msg.user}: ${msg.text}`;
+            messages.appendChild(item);
+            window.scrollTo(0, document.body.scrollHeight);
+        });
+
+        // Notificaciones de conexión/desconexión
+        socket.on('notification', (msg) => {
+            const item = document.createElement('li');
+            item.style.fontStyle = 'italic';
+            item.textContent = msg;
+            messages.appendChild(item);
+            window.scrollTo(0, document.body.scrollHeight);
+        });
+
+        function imageExists(url) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => resolve(true);
+                img.onerror = () => resolve(false);
+                img.src = url;
+            });
+        }
+        async function getFoto(usuario){
+            //Manejar info perfil
+            const user = {
+                name: usuario,
+                profilePic: ``
+            };
+            const extensions = ['jpg', 'png', 'jpeg', 'gif'];
+            let found = false;
+            for (let ext of extensions) {
+                const imgPath = `img/${usuario}.${ext}`;
+                if (await imageExists(imgPath)) {
+                    user.profilePic = `${imgPath}?t=${Date.now()}`;
+                    found = true;
+                    break;
+                }
+
+                if (!found) {
+                    user.profilePic = `img/default.png?t=${Date.now()}`;
+                }
+            }
+
+            // Actualiza el contenido dinámicamente
+            document.getElementById('user-name').textContent = user.name;
+            document.getElementById('profile-pic').src = user.profilePic;
+        }
+
+        //cambiar foto perfil - Dinamico
+        document.getElementById('changeImageButton').addEventListener('click', async () => {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                alert('Por favor, selecciona una imagen antes de continuar.');
+                return;
+            }
+
+            // Crear FormData
+            const formData = new FormData();
+            formData.append('name', socket.username); 
+            formData.append('file', file);           
+
+            console.log("index: ",socket.username,file.name,file)
+            // Usar fetch para enviar la solicitud
+            try {
+                const response = await fetch('/imgPerfil', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    alert(result.message);
+
+                    getFoto(socket.username)
+                } else {
+                    console.error('Error al subir la imagen:', response.statusText);
+                    alert('Hubo un error al subir la imagen.');
+                }
+            } catch (error) {
+                console.error('Error al hacer la solicitud:', error);
+                alert('Ocurrió un error al hacer la solicitud.');
+            }
+        });
+    </script>
+</body>
+</html>
